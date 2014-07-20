@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	// "encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"github.com/bitly/go-simplejson"
 )
 
 func main() {
@@ -45,7 +46,7 @@ const rootForm =
 			<h1>Flickr photos</h1>
 			<p>Find photos by tags!</p>
 			<form action="/showimage" method="post" accept-charset="utf-8">
-				<input type="text" name="str" value="Type Tags..." id="str">
+				<input type="text" name="str" placeholder="Type Tags..." id="str">
 				<input type="submit" value=".. and see the images!">
 			</form>
 		</body>
@@ -57,7 +58,7 @@ func showimage(w http.ResponseWriter, r *http.Request) {
 	tag := r.FormValue("str")
 	safeTag := url.QueryEscape(tag)
 	apiKey := "e7ef66cea848474a3e1fe3de117f4670"
-	fullUrl := fmt.Sprintf("https://api.flickr.com/services/rest/?method=flickr.photos.search&api_key=%stags=%s", apiKey, safeTag)
+	fullUrl := fmt.Sprintf("https://api.flickr.com/services/rest/?method=flickr.photos.search&api_key=%s&tags=%s&format=json&nojsoncallback=1&extras=url_z", apiKey, safeTag)
 
 	client := &http.Client{}
 
@@ -72,29 +73,51 @@ func showimage(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("Do: ", requestErr)
 		return
 	}
-
+	fmt.Printf("resp.Body: %+v\n", resp.Body)
 	defer resp.Body.Close()
-
-
 
 	body, dataReadErr := ioutil.ReadAll(resp.Body)
 	if dataReadErr != nil {
 		log.Fatal("ReadAll: ", dataReadErr)
 		return
 	}
+	// fmt.Printf("ReadAll: %+v\n", body)
 
-	res := make(map[string]map[string]map[string]interface{}, 0)
+	// res := make(map[string]map[string][]map[string]interface{}, 0)
+	// var res map[string]interface{}
+	// err = json.Unmarshal(body, &res)
 
-	json.Unmarshal(body, &res)
+	js, err := simplejson.NewJson(body)
+    if err != nil {
+        log.Fatal("Failed to read json: ", err)
+    }
 
-	owner, _ := res["photos"]["photo"]["owner"]
-	id, _ := res["photos"]["photo"]["id"]
+ //    m := res.(map[string]interface{})
+	// photos := res["photos"].(map[string]interface{})
+	// photo := photos["photo"].([]map[string]interface{})
 
-	queryUrl := fmt.Sprintf("http://flickr.com/photos/%s/%s", owner, id)
 
-	
+ //    foomap := m["foo"]
+ //    v := foomap.(map[string]interface{})
 
-	tempErr := upperTemplate.Execute(w, queryUrl)
+	// fmt.Printf("%+v\n", &res)
+
+    photo := js.Get("photos").Get("photo").GetIndex(0)
+    owner, err := photo.Get("owner").String()
+    if err != nil {
+        log.Fatal("Failed to get owner: ", err)
+    }
+    id, err := photo.Get("id").String()
+    if err != nil {
+        log.Fatal("Failed to get id: ", err)
+    }
+    photoUrl, err := photo.Get("url_z").String()
+    if err != nil {
+        log.Fatal("Failed to get photoUrl: ", err)
+    }
+    fmt.Printf("owner, id, photoUrl: %v, %v, %v\n", owner, id, photoUrl)
+
+	tempErr := upperTemplate.Execute(w, photoUrl)
 	if tempErr != nil {
 		http.Error(w, tempErr.Error(), http.StatusInternalServerError)
 	}
